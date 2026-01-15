@@ -17,57 +17,59 @@ let
   tokenFilePath = if cfg.tokenFile == null then "" else toString cfg.tokenFile;
 
   postBuildScript = pkgs.writeShellScript "attic-post-build-hook" ''
-    set -u
-    set -f # disable globbing
-    export IFS=' '
+        # NOTE: This script must never fail a build.
+        set -f # disable globbing
+        export IFS=' '
 
-    # Never fail the build due to cache issues.
-    if [ -z "''${OUT_PATHS:-}" ]; then
-      exit 0
-    fi
+        out_paths="''${OUT_PATHS-}"
+        drv_path="''${DRV_PATH-}"
 
-    echo "Attic post-build hook triggered" >&2
-    echo "  DRV_PATH: ''${DRV_PATH:-}" >&2
-    echo "  OUT_PATHS: ''${OUT_PATHS}" >&2
+        if [ -z "$out_paths" ]; then
+          exit 0
+        fi
 
-    # Skip source/temporary derivations.
-    if [[ "''${DRV_PATH:-}" == *"-source.drv" ]] || [[ "''${DRV_PATH:-}" == *"tmp"* ]]; then
-      echo "Skipping source/temporary derivation: ''${DRV_PATH:-}" >&2
-      exit 0
-    fi
+        echo "Attic post-build hook triggered" >&2
+        echo "  DRV_PATH: $drv_path" >&2
+        echo "  OUT_PATHS: $out_paths" >&2
 
-    token_file="${tokenFilePath}"
-    if [ -z "$token_file" ] || [ ! -f "$token_file" ]; then
-      echo "Attic: token file missing; skipping push" >&2
-      exit 0
-    fi
+        # Skip source/temporary derivations.
+        if [[ "$drv_path" == *"-source.drv" ]] || [[ "$drv_path" == *"tmp"* ]]; then
+          echo "Skipping source/temporary derivation: $drv_path" >&2
+          exit 0
+        fi
 
-    token="$(${pkgs.coreutils}/bin/cat "$token_file" 2>/dev/null || true)"
-    if [ -z "$token" ]; then
-      echo "Attic: token empty; skipping push" >&2
-      exit 0
-    fi
+        token_file="${tokenFilePath}"
+        if [ -z "$token_file" ] || [ ! -f "$token_file" ]; then
+          echo "Attic: token file missing; skipping push" >&2
+          exit 0
+        fi
 
-    # Generate ephemeral config (never store token in Nix store).
-    tmpdir="$(${pkgs.coreutils}/bin/mktemp -d)"
-    trap '${pkgs.coreutils}/bin/rm -rf "$tmpdir"' EXIT
+        token="$(${pkgs.coreutils}/bin/cat "$token_file" 2>/dev/null || true)"
+        if [ -z "$token" ]; then
+          echo "Attic: token empty; skipping push" >&2
+          exit 0
+        fi
 
-    export XDG_CONFIG_HOME="$tmpdir"
-    ${pkgs.coreutils}/bin/mkdir -p "$XDG_CONFIG_HOME/attic"
+        # Generate ephemeral config (never store token in Nix store).
+        tmpdir="$(${pkgs.coreutils}/bin/mktemp -d)"
+        trap '${pkgs.coreutils}/bin/rm -rf "$tmpdir"' EXIT
 
-    ${pkgs.coreutils}/bin/cat > "$XDG_CONFIG_HOME/attic/config.toml" <<EOF
+        export XDG_CONFIG_HOME="$tmpdir"
+        ${pkgs.coreutils}/bin/mkdir -p "$XDG_CONFIG_HOME/attic"
+
+        ${pkgs.coreutils}/bin/cat > "$XDG_CONFIG_HOME/attic/config.toml" <<EOF
     [servers.${cfg.serverName}]
     endpoint = "${cfg.serverEndpoint}"
     token = "$token"
     EOF
 
-    echo "Attic: pushing to ${cfg.serverName}:${cfg.cacheName} (${cfg.serverEndpoint})" >&2
+        echo "Attic: pushing to ${cfg.serverName}:${cfg.cacheName} (${cfg.serverEndpoint})" >&2
 
-    for path in ''${OUT_PATHS}; do
-      ${pkgs.attic-client}/bin/attic push "${cfg.serverName}:${cfg.cacheName}" "$path" 2>&1 || true
-    done
+        # Batch push for efficiency.
+        # shellcheck disable=SC2086
+        ${pkgs.attic-client}/bin/attic push "${cfg.serverName}:${cfg.cacheName}" $out_paths 2>&1 || true
 
-    exit 0
+        exit 0
   '';
 in
 {
@@ -80,6 +82,9 @@ in
       description = ''
         Name of the server in the generated Attic config (used as the prefix for
         pushes like `serverName:cacheName`).
+
+        This is just a label inside `~/.config/attic/config.toml`; it does not need
+        to match `networking.hostName`.
       '';
       example = "attic";
     };

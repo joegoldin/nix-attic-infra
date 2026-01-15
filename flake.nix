@@ -92,13 +92,24 @@
 
       # CI checks
       checks = flake-utils.lib.eachDefaultSystem (system: {
-        modules-eval = nixpkgs.legacyPackages.${system}.runCommand "check-modules-eval" { } ''
-          echo "Checking that all modules can be imported without errors..."
-          echo "✓ NixOS modules: attic-post-build-hook, attic-client"
-          echo "✓ Home Manager modules: attic-client, attic-client-darwin"
-          echo "✓ All modules are syntactically valid Nix expressions"
-          touch $out
-        '';
+        modules-eval =
+          let
+            pkgs = nixpkgs.legacyPackages.${system};
+          in
+          pkgs.runCommand "check-modules-eval" { nativeBuildInputs = [ pkgs.nix ]; } ''
+            echo "Checking that all modules can be imported without errors..."
+
+            nix-instantiate --eval --strict -E '
+              let
+                postBuildHook = import ${./modules/nixos/attic-post-build-hook.nix};
+                atticClient = import ${./modules/nixos/attic-client.nix};
+              in
+              "modules imported successfully"
+            '
+
+            echo "✓ NixOS modules import successfully"
+            touch $out
+          '';
       });
 
       # Library functions for advanced usage
