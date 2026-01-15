@@ -118,8 +118,7 @@ services.attic-post-build-hook = {
   # Token file (plain text) used at runtime
   tokenFile = "/run/secrets/attic-client-token";
 
-  # User account that runs the hook
-  user = "builder";
+  # Post-build hooks run under the nix-daemon (root). Ensure the token file is readable.
 };
 ```
 

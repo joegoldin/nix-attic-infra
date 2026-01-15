@@ -115,16 +115,6 @@ in
       example = "/run/secrets/attic-client-token";
     };
 
-    user = lib.mkOption {
-      type = lib.types.str;
-      default = "builder";
-      description = ''
-        User account that has attic-client configured with appropriate tokens.
-        This user must have push access to the specified cache.
-      '';
-      example = "builduser";
-    };
-
     serverHostnames = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
@@ -154,12 +144,6 @@ in
 
     # Configure the post-build hook
     nix.settings.post-build-hook = toString postBuildScript;
-
-    # Ensure the hook runs as the user with attic access
-    nix.settings.allowed-users = [ cfg.user ];
-
-    # Trust the user to modify the nix store (needed for post-build hooks)
-    nix.settings.trusted-users = [ cfg.user ];
 
     # Ensure attic-client is available system-wide
     environment.systemPackages = [ pkgs.attic-client ];

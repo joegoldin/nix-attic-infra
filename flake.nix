@@ -132,16 +132,16 @@
         mkPostBuildHook =
           {
             cacheName,
-            user ? "builder",
             serverHostnames ? [
               "atticd"
               "cache-server"
+              "cache-build-server"
             ],
           }:
           {
             services.attic-post-build-hook = {
               enable = true;
-              inherit cacheName user serverHostnames;
+              inherit cacheName serverHostnames;
             };
           };
 
