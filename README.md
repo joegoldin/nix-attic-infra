@@ -1,6 +1,6 @@
 # nix-attic-infra
 
-Production-ready Attic binary cache infrastructure with automated post-build hooks, SOPS secrets integration, and cross-platform client management for NixOS and macOS.
+Opinionated Attic binary cache infrastructure that layers on top of the canonical upstream flake (`zhaofengli/attic`), adding post-build hooks, token/secrets ergonomics, and cross-platform client management for NixOS and Home Manager.
 
 ## Features
 
@@ -80,6 +80,13 @@ Centralized cache management across multiple development and production environm
 }
 ```
 
+## Canonical Attic (Upstream)
+
+This flake includes `github:zhaofengli/attic` as an input and re-exports:
+
+- `nixosModules.atticd` (server module)
+- `packages.<system>.attic`, `packages.<system>.attic-client`, `packages.<system>.attic-server`
+
 ## What's Included
 
 ### NixOS Modules
@@ -102,8 +109,16 @@ Centralized cache management across multiple development and production environm
 ```nix
 services.attic-post-build-hook = {
   enable = true;
-  cacheName = "my-cache";           # Attic cache name
-  user = "builder";                 # User with attic-client access
+
+  # Target cache
+  serverName = "cache-build-server";
+  serverEndpoint = "http://cache-build-server:5001";
+  cacheName = "cache-local";
+
+  # Token file (plain text) used at runtime
+  tokenFile = "/run/secrets/attic-client-token";
+
+  # Post-build hooks run under the nix-daemon (root). Ensure the token file is readable.
 };
 ```
 
