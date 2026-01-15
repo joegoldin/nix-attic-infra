@@ -4,19 +4,40 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Canonical upstream Attic flake (server + client + nixos module)
+    attic = {
+      url = "github:zhaofengli/attic";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      attic,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
       in
       {
+        packages = {
+          # Re-export canonical upstream packages.
+          attic = attic.packages.${system}.attic;
+          attic-client = attic.packages.${system}.attic-client;
+          attic-server = attic.packages.${system}.attic-server;
+          default = attic.packages.${system}.attic;
+        };
+
         # Development shell for working on this flake
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            nixpkgs-fmt
-            attic-client
+          buildInputs = [
+            pkgs.nixpkgs-fmt
+            attic.packages.${system}.attic-client
           ];
 
           shellHook = ''
@@ -31,11 +52,17 @@
         # Formatter for nix fmt
         formatter = pkgs.nixpkgs-fmt;
       }
-    ) // {
+    )
+    // {
       # NixOS modules for system-level integration
       nixosModules = {
+        # Canonical upstream server module
+        atticd = attic.nixosModules.atticd;
+
+        # nix-attic-infra additions
         attic-post-build-hook = import ./modules/nixos/attic-post-build-hook.nix;
         attic-client = import ./modules/nixos/attic-client.nix;
+
         default = self.nixosModules.attic-post-build-hook;
       };
 
@@ -65,7 +92,7 @@
 
       # CI checks
       checks = flake-utils.lib.eachDefaultSystem (system: {
-        modules-eval = nixpkgs.legacyPackages.${system}.runCommand "check-modules-eval" {} ''
+        modules-eval = nixpkgs.legacyPackages.${system}.runCommand "check-modules-eval" { } ''
           echo "Checking that all modules can be imported without errors..."
           echo "✓ NixOS modules: attic-post-build-hook, attic-client"
           echo "✓ Home Manager modules: attic-client, attic-client-darwin"
@@ -77,20 +104,35 @@
       # Library functions for advanced usage
       lib = {
         # Helper to create attic client configuration
-        mkAtticClient = { servers, enableShellAliases ? true, tokenSubstitution ? true }: {
-          programs.attic-client = {
-            enable = true;
-            inherit servers enableShellAliases tokenSubstitution;
+        mkAtticClient =
+          {
+            servers,
+            enableShellAliases ? true,
+            tokenSubstitution ? true,
+          }:
+          {
+            programs.attic-client = {
+              enable = true;
+              inherit servers enableShellAliases tokenSubstitution;
+            };
           };
-        };
 
         # Helper to create post-build hook configuration
-        mkPostBuildHook = { cacheName, user ? "builder", serverHostnames ? [ "atticd" "cache-server" ] }: {
-          services.attic-post-build-hook = {
-            enable = true;
-            inherit cacheName user serverHostnames;
+        mkPostBuildHook =
+          {
+            cacheName,
+            user ? "builder",
+            serverHostnames ? [
+              "atticd"
+              "cache-server"
+            ],
+          }:
+          {
+            services.attic-post-build-hook = {
+              enable = true;
+              inherit cacheName user serverHostnames;
+            };
           };
-        };
 
         # Common server configurations
         commonServers = {
