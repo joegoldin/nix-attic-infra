@@ -106,11 +106,14 @@ in
     };
 
     tokenFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
+      type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
         Path to a file containing the Attic token (plain text). If set, the
         post-build hook generates an ephemeral config using this token.
+
+        This is typically a runtime path (e.g. a `sops-nix` secret) like
+        `/run/secrets/...`.
       '';
       example = "/run/secrets/attic-client-token";
     };
