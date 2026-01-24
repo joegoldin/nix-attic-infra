@@ -143,17 +143,24 @@ programs.attic-client = {
 ## Security Features
 
 ### SOPS Integration
-Seamlessly integrates with SOPS-nix for secure token management:
+Seamlessly integrates with SOPS-nix for secure token management with permission hardening:
 
 ```nix
-# SOPS manages your tokens
-sops.secrets."attic-token" = {
-  path = "/home/user/.config/sops/attic-token";
+# SOPS manages your tokens with restricted permissions
+sops.secrets."attic-client-token" = {
+  path = "/run/secrets/attic-client-token";
+  mode = "0400";  # Owner-only read access
 };
 
 # Automatically substituted during activation
-programs.attic-client.servers.prod.tokenPath = config.sops.secrets."attic-token".path;
+programs.attic-client.servers.prod.tokenPath = config.sops.secrets."attic-client-token".path;
 ```
+
+**File Permission Hardening:**
+- SOPS secrets configured with `mode = "0400"` (owner-only read)
+- Runtime token bearer (`/run/nix/attic-token-bearer`) set to mode `0600`
+- Token creation uses `umask 0077` to prevent world-readable files
+- Readability checks verify token files are accessible before use
 
 ### Safety Assertions
 Built-in checks prevent common configuration mistakes:
