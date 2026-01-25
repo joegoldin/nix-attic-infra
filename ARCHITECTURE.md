@@ -171,9 +171,20 @@ home.shellAliases = lib.mkIf cfg.enableShellAliases {
 
 1. **Storage**: Encrypted with SOPS, stored in repository
 2. **Decryption**: Only on target systems with proper keys
-3. **Access**: Restricted file permissions (600)
+3. **Access**: Restricted file permissions (0400 for SOPS secrets, 0600 for runtime tokens)
 4. **Usage**: Temporary copies for service operations
 5. **Cleanup**: Automatic cleanup of temporary files
+
+### File Permission Hardening
+
+The `attic-client` module includes enhanced security through strict file permissions:
+
+- **SOPS secrets** (`/run/secrets/attic-client-token`): Set to mode `0400` (owner-only read)
+- **Runtime token bearer** (`/run/nix/attic-token-bearer`): Set to mode `0600` (owner-only read/write)
+- **Token creation**: Uses `umask 0077` to ensure newly created files are not world-readable
+- **Readability checks**: Verifies token files are readable before access, logging appropriate errors
+
+These restrictions ensure that sensitive authentication tokens are never accessible to other users on the system, preventing privilege escalation and token theft.
 
 ### Access Control
 

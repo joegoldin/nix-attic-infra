@@ -94,6 +94,7 @@ in
       path = "/run/secrets/attic-client-token";
       owner = config.users.users.root.name;
       group = config.users.users.root.group;
+      mode = "0400";
     };
 
     environment.systemPackages = [ pkgs.attic-client ];
@@ -123,14 +124,12 @@ in
           exit 0
         fi
 
-        token=$(cat "$token_file" 2>/dev/null || true)
-        if [ -z "$token" ]; then
-          echo "Attic: Token empty, skipping push" >&2
+        if [ ! -r "$token_file" ]; then
+          echo "Attic: Token file not readable, skipping push" >&2
           exit 0
         fi
 
-        tmpdir=$(mktemp -d)
-        trap 'rm -rf "$tmpdir"' EXIT
+        token=$(cat "$token_file")
 
         export XDG_CONFIG_HOME="$tmpdir"
         mkdir -p "$XDG_CONFIG_HOME/attic"
@@ -170,15 +169,17 @@ in
       };
       script = ''
         set -euo pipefail
-
-        token_file="${tokenFilePath}"
-
-        if [[ -f "$token_file" ]]; then
-          echo "Preparing Attic token for Nix daemon cache access..."
-          mkdir -p /run/nix
-          token=$(cat "$token_file")
-          echo "bearer $token" > /run/nix/attic-token-bearer
-          chmod 0644 /run/nix/attic-token-bearer
+        if [[ -f "${config.sops.secrets."attic-client-token".path}" ]]; then
+          if [[ ! -r "${config.sops.secrets."attic-client-token".path}" ]]; then
+            echo "Warning: Attic client token not readable. Cache pulls may fail."
+          else
+            echo "Preparing Attic token for Nix daemon cache access..."
+            mkdir -p /run/nix
+            token=$(cat "${config.sops.secrets."attic-client-token".path}")
+            umask 0077
+            echo "bearer $token" > /run/nix/attic-token-bearer
+            chmod 0600 /run/nix/attic-token-bearer
+          fi
         else
           echo "Warning: Attic client token not found at $token_file" >&2
         fi
