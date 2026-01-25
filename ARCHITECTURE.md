@@ -73,7 +73,7 @@ The post-build hook:
 
 ```nix
 # Smart hostname detection
-serverHostnames = [ "atticd" "cache-server" "cache-build-server" ];
+serverHostnames = [ "atticd" "cache-server" "attic-cache" ];
 
 # Hook disabled if current hostname matches
 config = lib.mkIf (cfg.enable && !(lib.elem config.networking.hostName cfg.serverHostnames))

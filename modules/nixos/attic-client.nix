@@ -54,7 +54,7 @@ in
       default = null;
       description = ''
         Path to the SOPS encrypted token file. If null, you must ensure a token is
-        available at `${tokenFilePath}`.
+        available at /run/secrets/attic-client-token.
       '';
     };
 
@@ -158,7 +158,7 @@ in
           echo "Attic: pushing to ${cfg.serverName}:${cfg.cache}" >&2
           # shellcheck disable=SC2086
           ${pkgs.attic-client}/bin/attic push "${cfg.serverName}:${cfg.cache}" $out_paths 2>&1 || true
-        } || true
+        }
 
         exit 0
       '';
@@ -194,12 +194,16 @@ in
           if [[ ! -r "$token_file" ]]; then
             echo "Warning: Attic client token not readable. Cache pulls may fail."
           else
-            echo "Preparing Attic token for Nix daemon cache access..."
-            mkdir -p /run/nix
             token=$(cat "$token_file")
-            umask 0077
-            echo "bearer $token" > /run/nix/attic-token-bearer
-            chmod 0600 /run/nix/attic-token-bearer
+            if [[ -z "$token" ]]; then
+              echo "Warning: Attic client token is empty. Cache pulls may fail."
+            else
+              echo "Preparing Attic token for Nix daemon cache access..."
+              mkdir -p /run/nix
+              umask 0077
+              echo "bearer $token" > /run/nix/attic-token-bearer
+              chmod 0600 /run/nix/attic-token-bearer
+            fi
           fi
         else
           echo "Warning: Attic client token not found at $token_file" >&2
