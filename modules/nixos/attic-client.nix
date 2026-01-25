@@ -88,6 +88,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    warnings = lib.optional (cfg.configureNixSubstituter && cfg.trustedPublicKeys == [ ]) ''
+      attic-client: configureNixSubstituter is enabled but trustedPublicKeys is empty.
+      The trusted-public-keys attribute will be omitted from nix.settings.
+      Consider adding trusted public keys to services.attic-client.trustedPublicKeys
+      or configure substituters manually if signature verification is needed.
+    '';
+
     sops.secrets."attic-client-token" = lib.mkIf (cfg.tokenFile != null) {
       sopsFile = cfg.tokenFile;
       key = cfg.tokenKey;
@@ -161,10 +168,14 @@ in
       (lib.mkIf cfg.enablePostBuildHook {
         post-build-hook = "/etc/nix/attic-upload.sh";
       })
-      (lib.mkIf cfg.configureNixSubstituter {
-        substituters = lib.mkDefault [ substituterUrl ];
-        trusted-public-keys = lib.mkDefault cfg.trustedPublicKeys;
-      })
+      (
+        lib.mkIf cfg.configureNixSubstituter {
+          substituters = lib.mkDefault [ substituterUrl ];
+        }
+        // lib.optionalAttrs (cfg.trustedPublicKeys != [ ]) {
+          trusted-public-keys = lib.mkDefault cfg.trustedPublicKeys;
+        }
+      )
     ];
 
     systemd.services.nix-attic-token = lib.mkIf (cfg.tokenFile != null) {
