@@ -130,6 +130,13 @@ in
         fi
 
         token=$(cat "$token_file")
+        if [ -z "$token" ]; then
+          echo "Attic: Token empty, skipping push" >&2
+          exit 0
+        fi
+
+        tmpdir=$(mktemp -d)
+        trap 'rm -rf "$tmpdir"' EXIT
 
         export XDG_CONFIG_HOME="$tmpdir"
         mkdir -p "$XDG_CONFIG_HOME/attic"
@@ -160,7 +167,7 @@ in
       })
     ];
 
-    systemd.services.nix-attic-token = {
+    systemd.services.nix-attic-token = lib.mkIf (cfg.tokenFile != null) {
       description = "Prepare Attic authentication token for Nix daemon";
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
@@ -169,13 +176,16 @@ in
       };
       script = ''
         set -euo pipefail
-        if [[ -f "${config.sops.secrets."attic-client-token".path}" ]]; then
-          if [[ ! -r "${config.sops.secrets."attic-client-token".path}" ]]; then
+
+        token_file="${tokenFilePath}"
+
+        if [[ -f "$token_file" ]]; then
+          if [[ ! -r "$token_file" ]]; then
             echo "Warning: Attic client token not readable. Cache pulls may fail."
           else
             echo "Preparing Attic token for Nix daemon cache access..."
             mkdir -p /run/nix
-            token=$(cat "${config.sops.secrets."attic-client-token".path}")
+            token=$(cat "$token_file")
             umask 0077
             echo "bearer $token" > /run/nix/attic-token-bearer
             chmod 0600 /run/nix/attic-token-bearer
@@ -186,7 +196,7 @@ in
       '';
     };
 
-    systemd.services.nix-daemon = {
+    systemd.services.nix-daemon = lib.mkIf (cfg.tokenFile != null) {
       requires = [ "nix-attic-token.service" ];
       after = [ "nix-attic-token.service" ];
     };
