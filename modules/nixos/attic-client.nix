@@ -27,16 +27,16 @@ in
 
     server = lib.mkOption {
       type = lib.types.str;
-      default = "http://cache-build-server:5001";
+      default = "http://localhost:5001";
       description = "The URL of the Attic cache server";
       example = "https://cache.example.com";
     };
 
     serverName = lib.mkOption {
       type = lib.types.str;
-      default = "cache-build-server";
+      default = "attic-cache";
       description = ''
-        The name used in the generated Attic config (used as the prefix for
+        The name used in the generated Attic config (used as a prefix for
         pushes like `serverName:cache`).
       '';
       example = "attic";
@@ -149,7 +149,7 @@ in
         mkdir -p "$XDG_CONFIG_HOME/attic"
 
         cat > "$XDG_CONFIG_HOME/attic/config.toml" <<EOF
-        [servers.${cfg.serverName}]
+        [servers."${cfg.serverName}"]
         endpoint = "${cfg.server}"
         token = "$token"
         EOF

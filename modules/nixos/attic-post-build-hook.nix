@@ -58,7 +58,7 @@ let
         ${pkgs.coreutils}/bin/mkdir -p "$XDG_CONFIG_HOME/attic"
 
         ${pkgs.coreutils}/bin/cat > "$XDG_CONFIG_HOME/attic/config.toml" <<EOF
-    [servers.${cfg.serverName}]
+    [servers."${cfg.serverName}"]
     endpoint = "${cfg.serverEndpoint}"
     token = "$token"
     EOF
@@ -78,31 +78,26 @@ in
 
     serverName = lib.mkOption {
       type = lib.types.str;
-      default = "cache-build-server";
+      default = "attic-cache";
       description = ''
-        Name of the server in the generated Attic config (used as the prefix for
-        pushes like `serverName:cacheName`).
-
-        This is just a label inside `~/.config/attic/config.toml`; it does not need
-        to match `networking.hostName`.
+        The name used in the generated Attic config (used as a prefix for
+        pushes like `serverName:cache`).
       '';
       example = "attic";
-    };
-
-    serverEndpoint = lib.mkOption {
-      type = lib.types.str;
-      default = "http://cache-build-server:5001";
-      description = "Attic server base URL.";
-      example = "https://cache.example.com";
     };
 
     cacheName = lib.mkOption {
       type = lib.types.str;
       default = "cache-local";
-      description = ''
-        Name of the attic cache to push builds to.
-      '';
-      example = "my-team-cache";
+      description = "The name of the cache to push to";
+      example = "main";
+    };
+
+    serverEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "http://localhost:5001";
+      description = "The URL of the Attic cache server";
+      example = "https://cache.example.com";
     };
 
     tokenFile = lib.mkOption {
@@ -119,8 +114,8 @@ in
       type = lib.types.listOf lib.types.str;
       default = [
         "atticd"
+        "attic-cache"
         "cache-server"
-        "cache-build-server"
       ];
       description = ''
         List of hostnames running atticd that should not have post-build hooks enabled
