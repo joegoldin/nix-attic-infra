@@ -168,14 +168,14 @@ in
       (lib.mkIf cfg.enablePostBuildHook {
         post-build-hook = "/etc/nix/attic-upload.sh";
       })
-      (
-        lib.mkIf cfg.configureNixSubstituter {
+      (lib.mkIf cfg.configureNixSubstituter (
+        {
           substituters = lib.mkDefault [ substituterUrl ];
         }
         // lib.optionalAttrs (cfg.trustedPublicKeys != [ ]) {
           trusted-public-keys = lib.mkDefault cfg.trustedPublicKeys;
         }
-      )
+      ))
     ];
 
     systemd.services.nix-attic-token = lib.mkIf (cfg.tokenFile != null) {
