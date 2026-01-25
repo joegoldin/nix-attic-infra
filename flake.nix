@@ -134,8 +134,8 @@
             cacheName,
             serverHostnames ? [
               "atticd"
+              "attic-cache"
               "cache-server"
-              "cache-build-server"
             ],
           }:
           {

@@ -111,8 +111,8 @@ services.attic-post-build-hook = {
   enable = true;
 
   # Target cache
-  serverName = "cache-build-server";
-  serverEndpoint = "http://cache-build-server:5001";
+  serverName = "attic-cache";
+  serverEndpoint = "http://localhost:5001";
   cacheName = "cache-local";
 
   # Token file (plain text) used at runtime

@@ -11,6 +11,15 @@
 
 let
   cfg = config.services.attic-client;
+
+  tokenFilePath =
+    if cfg.tokenFile != null then
+      config.sops.secrets."attic-client-token".path
+    else
+      "/run/secrets/attic-client-token";
+
+  substituterUrl = "${lib.removeSuffix "/" cfg.server}/${cfg.cache}";
+
 in
 {
   options.services.attic-client = {
@@ -18,12 +27,24 @@ in
 
     server = lib.mkOption {
       type = lib.types.str;
+      default = "http://localhost:5001";
       description = "The URL of the Attic cache server";
       example = "https://cache.example.com";
     };
 
+    serverName = lib.mkOption {
+      type = lib.types.str;
+      default = "attic-cache";
+      description = ''
+        The name used in the generated Attic config (used as a prefix for
+        pushes like `serverName:cache`).
+      '';
+      example = "attic";
+    };
+
     cache = lib.mkOption {
       type = lib.types.str;
+      default = "cache-local";
       description = "The name of the cache to use for pulls and pushes";
       example = "main";
     };
@@ -32,8 +53,8 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = ''
-        Path to the SOPS encrypted token file. If null, the token must be
-        configured manually in the attic client configuration.
+        Path to the SOPS encrypted token file. If null, you must ensure a token is
+        available at /run/secrets/attic-client-token.
       '';
     };
 
@@ -45,16 +66,35 @@ in
 
     enablePostBuildHook = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = ''
-        Whether to enable automatic pushing to the cache via post-build hooks.
-        Disable this if using the attic-post-build-hook module instead.
+        Whether to enable automatic pushing to the cache via `nix.settings.post-build-hook`.
+
+        Prefer the dedicated `services.attic-post-build-hook` module when possible.
       '';
+    };
+
+    trustedPublicKeys = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Additional trusted public keys for the configured substituter.";
+    };
+
+    configureNixSubstituter = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to configure Nix substituters for the cache.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    # Define the system-level SOPS secret for the client token
+    warnings = lib.optional (cfg.configureNixSubstituter && cfg.trustedPublicKeys == [ ]) ''
+      attic-client: configureNixSubstituter is enabled but trustedPublicKeys is empty.
+      The trusted-public-keys attribute will be omitted from nix.settings.
+      Consider adding trusted public keys to services.attic-client.trustedPublicKeys
+      or configure substituters manually if signature verification is needed.
+    '';
+
     sops.secrets."attic-client-token" = lib.mkIf (cfg.tokenFile != null) {
       sopsFile = cfg.tokenFile;
       key = cfg.tokenKey;
@@ -64,23 +104,28 @@ in
       mode = "0400";
     };
 
-    # Install attic-client system-wide
     environment.systemPackages = [ pkgs.attic-client ];
 
-    # Create the post-build hook script with comprehensive error handling
     environment.etc."nix/attic-upload.sh" = lib.mkIf cfg.enablePostBuildHook {
       mode = "0755";
       text = ''
         #!${pkgs.bash}/bin/bash
-        # Fail-safe post-build hook - never blocks builds
+        # Fail-safe post-build hook - never blocks builds.
         set -uo pipefail
 
-        if [ -z "$OUT_PATHS" ]; then
+        out_paths="''${OUT_PATHS-}"
+        drv_path="''${DRV_PATH-}"
+
+        if [ -z "$out_paths" ]; then
           exit 0
         fi
 
-        token_file="${config.sops.secrets."attic-client-token".path}"
+        # Skip source/temporary derivations.
+        if [[ "$drv_path" == *"-source.drv" ]] || [[ "$drv_path" == *"tmp"* ]]; then
+          exit 0
+        fi
 
+        token_file="${tokenFilePath}"
         if [ ! -f "$token_file" ]; then
           echo "Attic: Token not available, skipping push" >&2
           exit 0
@@ -92,47 +137,47 @@ in
         fi
 
         token=$(cat "$token_file")
+        if [ -z "$token" ]; then
+          echo "Attic: Token empty, skipping push" >&2
+          exit 0
+        fi
 
-        # Create a temporary config file for the push
-        temp_config=$(mktemp)
-        trap 'rm -f "$temp_config"' EXIT
+        tmpdir=$(mktemp -d)
+        trap 'rm -rf "$tmpdir"' EXIT
 
-        cat > "$temp_config" <<EOF
-        [servers.${cfg.cache}]
+        export XDG_CONFIG_HOME="$tmpdir"
+        mkdir -p "$XDG_CONFIG_HOME/attic"
+
+        cat > "$XDG_CONFIG_HOME/attic/config.toml" <<EOF
+        [servers."${cfg.serverName}"]
         endpoint = "${cfg.server}"
         token = "$token"
         EOF
 
-        # Robust error handling - never fail the build
         {
-          echo "Attic: Pushing to cache '${cfg.cache}' at ${cfg.server}" >&2
-
-          if ${pkgs.attic-client}/bin/attic --config "$temp_config" push ${cfg.cache} $OUT_PATHS; then
-            echo "Attic: Successfully pushed paths" >&2
-          else
-            echo "Attic: Push failed - testing connectivity..." >&2
-            # Test server connectivity with timeout
-            if ${pkgs.curl}/bin/curl -s -f --max-time 10 \
-               "${cfg.server}/_attic/v1/cache/${cfg.cache}/info" \
-               -H "Authorization: Bearer $token" >/dev/null 2>&1; then
-              echo "Attic: Server reachable, possible permission issue" >&2
-            else
-              echo "Attic: Server unreachable or authentication failed" >&2
-            fi
-          fi
-        } || {
-          echo "Attic: Hook failed unexpectedly, continuing build" >&2
+          echo "Attic: pushing to ${cfg.serverName}:${cfg.cache}" >&2
+          # shellcheck disable=SC2086
+          ${pkgs.attic-client}/bin/attic push "${cfg.serverName}:${cfg.cache}" $out_paths 2>&1 || true
         }
 
-        # Always exit successfully
         exit 0
       '';
     };
 
-    # Configure Nix to use the post-build hook
-    nix.settings.post-build-hook = lib.mkIf cfg.enablePostBuildHook "/etc/nix/attic-upload.sh";
+    nix.settings = lib.mkMerge [
+      (lib.mkIf cfg.enablePostBuildHook {
+        post-build-hook = "/etc/nix/attic-upload.sh";
+      })
+      (lib.mkIf cfg.configureNixSubstituter (
+        {
+          substituters = lib.mkDefault [ substituterUrl ];
+        }
+        // lib.optionalAttrs (cfg.trustedPublicKeys != [ ]) {
+          trusted-public-keys = lib.mkDefault cfg.trustedPublicKeys;
+        }
+      ))
+    ];
 
-    # Prepare the token for Nix daemon cache access
     systemd.services.nix-attic-token = lib.mkIf (cfg.tokenFile != null) {
       description = "Prepare Attic authentication token for Nix daemon";
       wantedBy = [ "multi-user.target" ];
@@ -142,35 +187,33 @@ in
       };
       script = ''
         set -euo pipefail
-        if [[ -f "${config.sops.secrets."attic-client-token".path}" ]]; then
-          if [[ ! -r "${config.sops.secrets."attic-client-token".path}" ]]; then
+
+        token_file="${tokenFilePath}"
+
+        if [[ -f "$token_file" ]]; then
+          if [[ ! -r "$token_file" ]]; then
             echo "Warning: Attic client token not readable. Cache pulls may fail."
           else
-            echo "Preparing Attic token for Nix daemon cache access..."
-            mkdir -p /run/nix
-            token=$(cat "${config.sops.secrets."attic-client-token".path}")
-            umask 0077
-            echo "bearer $token" > /run/nix/attic-token-bearer
-            chmod 0600 /run/nix/attic-token-bearer
+            token=$(cat "$token_file")
+            if [[ -z "$token" ]]; then
+              echo "Warning: Attic client token is empty. Cache pulls may fail."
+            else
+              echo "Preparing Attic token for Nix daemon cache access..."
+              mkdir -p /run/nix
+              umask 0077
+              echo "bearer $token" > /run/nix/attic-token-bearer
+              chmod 0600 /run/nix/attic-token-bearer
+            fi
           fi
         else
-          echo "Warning: Attic client token not found. Cache pulls may fail."
+          echo "Warning: Attic client token not found at $token_file" >&2
         fi
       '';
     };
 
-    # Ensure Nix daemon waits for token preparation
     systemd.services.nix-daemon = lib.mkIf (cfg.tokenFile != null) {
       requires = [ "nix-attic-token.service" ];
       after = [ "nix-attic-token.service" ];
-    };
-
-    # Add the cache to Nix configuration for pulls
-    nix.settings = {
-      substituters = [ cfg.server ];
-      trusted-public-keys = [
-        # Users should add their cache public keys here
-      ];
     };
   };
 }
