@@ -118,13 +118,13 @@
         mkAtticClient =
           {
             servers,
+            defaultServer ? null,
             enableShellAliases ? true,
-            tokenSubstitution ? true,
           }:
           {
             programs.attic-client = {
               enable = true;
-              inherit servers enableShellAliases tokenSubstitution;
+              inherit servers defaultServer enableShellAliases;
             };
           };
 
