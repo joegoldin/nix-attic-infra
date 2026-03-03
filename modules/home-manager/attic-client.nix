@@ -170,26 +170,18 @@ in
 
       # Create shell aliases for convenient attic operations
       shellAliases = lib.mkIf cfg.enableShellAliases (
-        lib.mkMerge [
-          # Generic aliases
-          {
-            attic-list = "attic cache list";
-            attic-info = "attic cache info";
-          }
-
-          # Server-specific aliases
-          (lib.mkMerge (
-            lib.flatten (
-              lib.mapAttrsToList (
-                _serverName: server:
-                map (aliasName: {
-                  "attic-push-${aliasName}" = "attic push ${aliasName}";
-                  "attic-pull-${aliasName}" = "attic pull ${aliasName}";
-                }) server.aliases
-              ) cfg.servers
-            )
-          ))
-        ]
+        lib.mkMerge (
+          lib.flatten (
+            lib.mapAttrsToList (
+              _serverName: server:
+              map (aliasName: {
+                "attic-push-${aliasName}" = "attic push ${aliasName}";
+                "attic-pull-${aliasName}" = "attic pull ${aliasName}";
+                "attic-info-${aliasName}" = "attic cache info ${aliasName}";
+              }) server.aliases
+            ) cfg.servers
+          )
+        )
       );
     };
 
